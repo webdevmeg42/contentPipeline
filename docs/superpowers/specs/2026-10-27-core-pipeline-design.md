@@ -65,9 +65,10 @@ src/
 ├── time.js               duration/timestamp parsing, local→UTC conversion
 ├── ffmpeg/
 │   ├── run.js            spawn ffmpeg/ffprobe, parse progress, throw FfmpegError
-│   ├── probe.js          ffprobe → { duration, width, height, hasVideo, hasAudio }
+│   ├── probe.js          ffprobe → { duration, width, height, hasVideo, hasAudio, isImage, videoCodec, audioCodec }
 │   ├── prepArgs.js       pure: options → ffmpeg args for audio prep
 │   └── videoArgs.js      pure: options → ffmpeg args for loop segment, long mux, short
+├── files.js              .part paths and atomic write-then-rename
 ├── prep.js               orchestration: probe → args → run → output
 └── assemble.js           orchestration: validate → long + short → update DB
 ```
@@ -127,7 +128,7 @@ CREATE TABLE post_log (
 - Platform → video mapping in `config.js`: `youtube`, `facebook` → long; `youtube_shorts`, `instagram`, `tiktok`, `bluesky` → short; `substack` → none (links to the YouTube video).
 - Both videos are always assembled regardless of platforms.
 - Migrations: an ordered array of SQL strings in `db.js`, applied based on `PRAGMA user_version`. Foreign keys enabled via `PRAGMA foreign_keys = ON`.
-- DB file at `db/queue.db`, auto-created. Path overridable via `FCS_DB_PATH` (used by tests).
+- DB file at `db/queue.db`, auto-created. Path overridable via `FCS_DB_PATH`; video output dir overridable via `FCS_OUTPUT_DIR` (both used by tests).
 
 ## Audio prep (`prep`)
 
@@ -164,7 +165,9 @@ Output: `output/videos/<id>-long.mp4`.
 ### Short (9:16)
 - Audio: 60 s from `short_start_sec`, 1 s fade-in and fade-out, AAC 192 kbps.
 - Visual: `visual_vertical_path` if set, otherwise center 9:16 crop of `visual_path`; 1080×1920, 30 fps, same H.264 settings. Motion setting applies the same way as the long video. Video clips are looped if shorter than 60 s.
-- Encoded directly (no segment/copy trick).
+- Built with the same two steps as the long video (loop segment at 1080×1920, then mux with `-c:v copy`), so both outputs share one code path.
+
+Both muxes use `-t <duration>` rather than `-shortest` so output length is exact.
 
 Output: `output/videos/<id>-short.mp4`.
 
@@ -184,7 +187,7 @@ Output: `output/videos/<id>-short.mp4`.
 |---|---|
 | Unit | `prepArgs`, `videoArgs` for every branch (static / slow-zoom / video clip, vertical override, loop vs no loop, denoise on/off); `time.js` parsing and America/New_York → UTC across DST boundaries; platform mapping and validation. |
 | DB | In-memory SQLite: migrations from empty, `add` transaction with targets, status transitions, `assembling` → `pending` recovery, cascade delete. |
-| Integration | Real FFmpeg on fixtures generated at test time (10 s sine tone, solid-color PNG, 3 s `testsrc` clip). Assert via ffprobe: duration (±0.1 s), resolution, codecs, and measured loudness (±1 LU). Skipped with a clear message if FFmpeg is absent. |
+| Integration | Real FFmpeg on fixtures generated at test time (20 s and 75 s sine tones, solid-color 1920×1080 PNG, 6 s 1280×720 `testsrc` clip — long enough to exercise the clip crossfade). Assert via ffprobe: duration (±0.1 s audio, ±0.2 s video to allow for AAC priming), resolution, codecs, and measured loudness (±1 LU). Skipped with a clear message if FFmpeg is absent. |
 | CLI smoke | `add` → `list` → `status` against a temp DB (`FCS_DB_PATH`) and temp output dir. |
 
 Scripts: `npm test` (unit + DB), `npm run test:integration` (integration + CLI smoke).
