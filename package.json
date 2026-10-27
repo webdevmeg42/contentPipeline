@@ -1,0 +1,22 @@
+{
+  "name": "florida-country-sounds",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "fcs": "node src/index.js",
+    "test": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:all": "vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.5"
+  }
+}
